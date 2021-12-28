@@ -1,21 +1,84 @@
-import "reflect-metadata";
-import {createConnection} from "typeorm";
-import {User} from "./entity/User";
+import 'reflect-metadata';
+import express from 'express';
+import Redis from 'ioredis';
+import session from 'express-session';
+import connectRedis from 'connect-redis';
+import cors from 'cors';
 
-createConnection().then(async connection => {
+import { ApolloServer } from 'apollo-server-express';
 
-    console.log("Inserting a new user into the database...");
-    const user = new User();
-    user.firstName = "Timber";
-    user.lastName = "Saw";
-    user.age = 25;
-    await connection.manager.save(user);
-    console.log("Saved a new user with id: " + user.id);
+import {
+    __IS_PRODUCTION__,
+    COOKIE_NAME_LOGIN_SESSION,
+} from 'src/constants';
 
-    console.log("Loading users from the database...");
-    const users = await connection.manager.find(User);
-    console.log("Loaded users: ", users);
+import { GraphQLContext } from 'src/context';
 
-    console.log("Here you can setup and run express/koa/any other framework.");
+import {
+    baseSchema,
+    postSchema,
+    userSchema,
+} from 'src/schema';
 
-}).catch(error => console.log(error));
+import {
+    userResolvers,
+    postResolvers,
+} from 'src/resolvers';
+
+import connectToDB from 'src/config/db';
+
+connectToDB()
+
+const app = express();
+
+app.use(
+    cors({
+        origin: process.env.FRONTEND_URL,
+        credentials: true,
+    }),
+);
+
+// Redis/session setup
+const RedisStore = connectRedis(session);
+const redis = new Redis({
+    host: process.env.REDIS_HOST,
+    port: parseInt(process.env.REDIS_PORT as string),
+});
+
+app.use(
+    session({
+        name: COOKIE_NAME_LOGIN_SESSION,
+        store: new RedisStore({ client: redis, disableTouch: true }),
+        cookie: {
+            maxAge: 1000 * 60 * 60 * 24 * 365 * 10, // 10 years
+            httpOnly: true,
+            sameSite: 'lax',
+            secure: __IS_PRODUCTION__,
+        },
+        secret: process.env.SESSION_SECRET as string,
+        resave: false,
+    }),
+);
+
+// Apollo Server setup
+const apolloServer = new ApolloServer({
+    typeDefs: [baseSchema, userSchema, postSchema],
+    resolvers: [userResolvers, postResolvers],
+    context: ({ req, res }): GraphQLContext => ({ req, res, redis }),
+});
+
+apolloServer.applyMiddleware({
+    app,
+    cors: false,
+});
+
+app.get('/', (_, res) => {
+    res.send('Hello World');
+});
+
+const PORT = process.env.PORT || 5000;
+
+// Start server
+app.listen(PORT, () => {
+    console.log('Server started on port ' + PORT);
+});
