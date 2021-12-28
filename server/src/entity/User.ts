@@ -4,13 +4,14 @@ import {
     Column,
     CreateDateColumn,
     UpdateDateColumn,
-    OneToMany
+    OneToMany,
+    BaseEntity
 } from "typeorm";
 import { Post } from "./Post";
 import { Vote } from "./Vote";
 
 @Entity()
-export class User {
+export class User extends BaseEntity {
 
     @PrimaryGeneratedColumn()
     id: number;
